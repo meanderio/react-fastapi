@@ -37,10 +37,9 @@ function App() {
       </div>
       <h1>Vite + React</h1>
       <div className="card">
-        <button className="text-red-500" onClick={() => fetchPurchase()}>
-          Get Purchase
+        <button className="bg-indigo-500 hover:bg-indigo-700 hover:ring-2 hover:ring-red-500 rounded-lg text-white py-2 px-2 ease-in-out hover:shadow-xl hover:shadow-red-500" onClick={() => fetchPurchase()}> Get Purchase
         </button>
-        <div>
+        <div className="py-2">
           { purchase 
             ? (
               <div>
