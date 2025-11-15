@@ -3,6 +3,7 @@ import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import './App.css'
 import api from './api'
+import DataFrameTable from './DataFrameTable'
 
 interface Purchase {
   location: string;
@@ -21,9 +22,11 @@ function App() {
     setPurchase(response.data);
   };
 
-  //useEffect(() => {
-  //  fetchPurchase();
-  //}, []);
+  const data = [
+    { date: "2025-11-15", store: "A", category: "Food", price: 12.5 },
+    { date: "2025-11-15", store: "B", category: "Clothing", price: 44.99 },
+    { date: "2025-11-16", store: "A", category: "Electronics", price: null },
+  ];
 
   return (
     <>
@@ -36,6 +39,10 @@ function App() {
         </a>
       </div>
       <h1>Vite + React</h1>
+      <div className="p-4">
+        <h1 className="text-xl font-semibold mb-4">DataFrame View</h1>
+        <DataFrameTable data={data} caption="Sales Data" showRowIndex />
+      </div>
       <div className="card">
         <button className="bg-indigo-500 hover:bg-indigo-700 hover:ring-2 hover:ring-red-500 rounded-lg text-white py-2 px-2 ease-in-out hover:shadow-xl hover:shadow-red-500" onClick={() => fetchPurchase()}> Get Purchase
         </button>
