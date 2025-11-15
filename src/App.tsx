@@ -26,6 +26,12 @@ function App() {
     { date: "2025-11-15", store: "A", category: "Food", price: 12.5 },
     { date: "2025-11-15", store: "B", category: "Clothing", price: 44.99 },
     { date: "2025-11-16", store: "A", category: "Electronics", price: null },
+    { date: "2025-11-15", store: "A", category: "Food", price: 12.5 },
+    { date: "2025-11-15", store: "B", category: "Clothing", price: 44.99 },
+    { date: "2025-11-16", store: "A", category: "Electronics", price: null },
+    { date: "2025-11-15", store: "A", category: "Food", price: 12.5 },
+    { date: "2025-11-15", store: "B", category: "Clothing", price: 44.99 },
+    { date: "2025-11-16", store: "A", category: "Electronics", price: null },
   ];
 
   return (
@@ -38,11 +44,18 @@ function App() {
           <img src={reactLogo} className="logo react" alt="React logo" />
         </a>
       </div>
-      <h1>Vite + React</h1>
       <div className="p-4">
-        <h1 className="text-xl font-semibold mb-4">DataFrame View</h1>
-        <DataFrameTable data={data} caption="Sales Data" showRowIndex />
-      </div>
+      <h1 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">
+        DataFrame View
+      </h1>
+      <DataFrameTable
+        data={data}
+        caption="Sales Data"
+        showRowIndex={true}
+        rowsPerPageOptions={[5, 10, 25]}
+        defaultRowsPerPage={5}
+      />
+    </div>
       <div className="card">
         <button className="bg-indigo-500 hover:bg-indigo-700 hover:ring-2 hover:ring-red-500 rounded-lg text-white py-2 px-2 ease-in-out hover:shadow-xl hover:shadow-red-500" onClick={() => fetchPurchase()}> Get Purchase
         </button>
