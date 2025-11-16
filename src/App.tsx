@@ -1,9 +1,10 @@
-import{ useState, useEffect } from 'react'
+import{ useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import './App.css'
 import api from './api'
-import DataFrameTable from './DataFrameTable'
+import type { ColumnConfig } from './components/dataframe/types'
+import DataFrameTable from './components/dataframe/DataFrameTable'
 
 interface Purchase {
   location: string;
@@ -122,7 +123,7 @@ function App() {
     },
   ];
 
-  const columns = [
+  const columns: ColumnConfig[] = [
     {
       key: "date",
       label: "Date",
