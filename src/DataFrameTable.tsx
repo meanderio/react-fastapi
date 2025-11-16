@@ -21,7 +21,6 @@ interface DataTableProps {
   sortKey?: string | null;
   sortDirection?: SortDirection;
   onSort?: (column: string) => void;
-  /** Optional custom formatter; if omitted, default formatting is used */
   formatCellFn?: (
     value: CellValue,
     columnKey: string,
@@ -165,7 +164,7 @@ function defaultFormatCell(value: CellValue): React.ReactNode {
 }
 
 /* ------------------------------------------------------------------ */
-/* Smart wrapper: search, sort, pagination, type-aware formatting     */
+/* Smart wrapper: search, sort, pagination, type formatting, CSV      */
 /* ------------------------------------------------------------------ */
 
 interface DataFrameTableProps {
@@ -353,37 +352,9 @@ export default function DataFrameTable(props: DataFrameTableProps) {
     });
   }
 
-  // Typed formatter wired into DataTable
+  // Type-aware formatter wired into DataTable
   const typedFormatCell = useMemo(
     function () {
-      const numberFormatter = new Intl.NumberFormat(locale, {
-        maximumFractionDigits: 2,
-      });
-      const integerFormatter = new Intl.NumberFormat(locale, {
-        maximumFractionDigits: 0,
-      });
-      const currencyFormatter = new Intl.NumberFormat(locale, {
-        style: "currency",
-        currency,
-        maximumFractionDigits: 2,
-      });
-      const percentFormatter = new Intl.NumberFormat(locale, {
-        style: "percent",
-        maximumFractionDigits: percentDigits,
-      });
-      const dateFormatter = new Intl.DateTimeFormat(locale, {
-        year: "numeric",
-        month: "short",
-        day: "2-digit",
-      });
-      const dateTimeFormatter = new Intl.DateTimeFormat(locale, {
-        year: "numeric",
-        month: "short",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-
       return function (
         value: CellValue,
         columnKey: string,
@@ -396,54 +367,69 @@ export default function DataFrameTable(props: DataFrameTableProps) {
         }
 
         const type = columnTypeByKey[columnKey] ?? "string";
+        const str = formatValueWithType(
+          value,
+          type,
+          locale,
+          currency,
+          percentDigits
+        );
 
-        // Booleans first (nice labels)
-        if (type === "boolean" || typeof value === "boolean") {
-          return value ? "True" : "False";
-        }
-
-        // Dates
-        if (type === "date" || type === "datetime") {
-          const d = new Date(value as any);
-          if (isNaN(d.getTime())) {
-            return String(value);
-          }
-          return type === "date"
-            ? dateFormatter.format(d)
-            : dateTimeFormatter.format(d);
-        }
-
-        // Numerics
-        if (
-          type === "integer" ||
-          type === "number" ||
-          type === "currency" ||
-          type === "percent"
-        ) {
-          const n = Number(value);
-          if (Number.isNaN(n)) {
-            return String(value);
-          }
-
-          if (type === "integer") {
-            return integerFormatter.format(n);
-          }
-          if (type === "currency") {
-            return currencyFormatter.format(n);
-          }
-          if (type === "percent") {
-            // Assume fractions (0–1) and format as 0–100%
-            return percentFormatter.format(n);
-          }
-          return numberFormatter.format(n);
-        }
-
-        // Default string
-        return String(value);
+        return str;
       };
     },
     [columnTypeByKey, locale, currency, percentDigits]
   );
+
+  // CSV export (uses filtered + sorted data, not just current page)
+  function exportToCsv() {
+    if (!columns.length) return;
+
+    const rows = sortedData; // already filtered & sorted
+
+    let csv = "";
+
+    // Header
+    csv += columns.join(",") + "\n";
+
+    // Rows
+    rows.forEach(function (row) {
+      const cells = columns.map(function (col) {
+        const raw = row[col];
+        if (raw === null || raw === undefined) return "";
+
+        const type = columnTypeByKey[col] ?? "string";
+        const formatted = formatValueWithType(
+          raw,
+          type,
+          locale,
+          currency,
+          percentDigits
+        );
+
+        // Escape for CSV
+        const safe = String(formatted).replace(/"/g, '""');
+        if (/[",\n]/.test(safe)) {
+          return `"${safe}"`;
+        }
+        return safe;
+      });
+
+      csv += cells.join(",") + "\n";
+    });
+
+    const blob = new Blob([csv], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "data.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div className="space-y-3">
@@ -463,8 +449,18 @@ export default function DataFrameTable(props: DataFrameTableProps) {
           />
         </div>
 
-        {/* Rows per page + pagination */}
+        {/* Right side controls */}
         <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
+          {/* Export button */}
+          <button
+            type="button"
+            onClick={exportToCsv}
+            className="inline-flex items-center rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-blue-400"
+          >
+            Export CSV
+          </button>
+
+          {/* Rows per page */}
           <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
             <span>Rows per page:</span>
             <select
@@ -482,6 +478,7 @@ export default function DataFrameTable(props: DataFrameTableProps) {
             </select>
           </div>
 
+          {/* Pagination */}
           <div className="flex items-center gap-3 text-xs text-gray-600 dark:text-gray-400">
             <span>
               Page {safePage + 1} of {totalPages}
@@ -531,8 +528,84 @@ export default function DataFrameTable(props: DataFrameTableProps) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Type inference helpers                                             */
+/* Type helpers                                                       */
 /* ------------------------------------------------------------------ */
+
+function formatValueWithType(
+  value: CellValue,
+  type: ColumnType,
+  locale: string,
+  currency: string,
+  percentDigits: number
+): string {
+  if (value === null || value === undefined) return "";
+
+  // Boolean
+  if (type === "boolean" || typeof value === "boolean") {
+    return value ? "True" : "False";
+  }
+
+  // Dates
+  if (type === "date" || type === "datetime") {
+    const d = new Date(value as any);
+    if (isNaN(d.getTime())) return String(value);
+
+    if (type === "date") {
+      return new Intl.DateTimeFormat(locale, {
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+      }).format(d);
+    }
+
+    return new Intl.DateTimeFormat(locale, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(d);
+  }
+
+  // Numeric-ish
+  if (
+    type === "integer" ||
+    type === "number" ||
+    type === "currency" ||
+    type === "percent"
+  ) {
+    const n = Number(value);
+    if (Number.isNaN(n)) return String(value);
+
+    if (type === "integer") {
+      return new Intl.NumberFormat(locale, {
+        maximumFractionDigits: 0,
+      }).format(n);
+    }
+
+    if (type === "currency") {
+      return new Intl.NumberFormat(locale, {
+        style: "currency",
+        currency,
+        maximumFractionDigits: 2,
+      }).format(n);
+    }
+
+    if (type === "percent") {
+      return new Intl.NumberFormat(locale, {
+        style: "percent",
+        maximumFractionDigits: percentDigits,
+      }).format(n); // assumes 0–1 range
+    }
+
+    return new Intl.NumberFormat(locale, {
+      maximumFractionDigits: 2,
+    }).format(n);
+  }
+
+  // Default string
+  return String(value);
+}
 
 function inferColumnType(
   columnKey: string,
@@ -544,15 +617,16 @@ function inferColumnType(
   if (nonNull.length === 0) return "string";
 
   const sample = nonNull.slice(0, 20);
+  const lowerKey = columnKey.toLowerCase();
 
   // Booleans
-  if (sample.every(function (v) {
-    return typeof v === "boolean";
-  })) {
+  if (
+    sample.every(function (v) {
+      return typeof v === "boolean";
+    })
+  ) {
     return "boolean";
   }
-
-  const lowerKey = columnKey.toLowerCase();
 
   // Date-like strings
   const stringValues = sample.filter(function (v) {
