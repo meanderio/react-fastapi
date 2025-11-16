@@ -121,6 +121,45 @@ function App() {
       in_stock: true,
     },
   ];
+
+  const columns = [
+    {
+      key: "date",
+      label: "Date",
+      type: "date",
+      filter: "range", // date range filter
+    },
+    {
+      key: "store",
+      label: "Store",
+      filter: "text",
+    },
+    {
+      key: "category",
+      label: "Category",
+      filter: "text",
+    },
+    {
+      key: "price",
+      label: "Price ($)",
+      type: "currency",
+      align: "right",
+      filter: "range", // numeric range filter
+    },
+    {
+      key: "conversion_rate",
+      label: "Conv. Rate",
+      type: "percent",
+      align: "right",
+      filter: "range",
+    },
+    {
+      key: "in_stock",
+      label: "In Stock",
+      type: "boolean",
+      filter: "text", // e.g. filter by "True" / "False"
+    },
+  ];
   return (
     <>
       <div className="flex justify-center">
@@ -137,16 +176,12 @@ function App() {
         </h1>
         <DataFrameTable
           data={data}
+          columns={columns}
           caption="Sales Data"
           showRowIndex
           locale="en-US"
           currency="USD"
           percentDigits={1}
-          columnTypes={{
-            // Example: force a specific type if you don't like inference
-            price: "currency",
-            conversion_rate: "percent",
-          }}
         />
       </div>
       <div className="card">

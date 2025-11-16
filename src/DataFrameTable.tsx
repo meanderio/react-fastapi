@@ -13,20 +13,39 @@ type ColumnType =
   | "datetime"
   | "boolean";
 
+type ColumnFilterMode = "text" | "range" | "none";
+
+interface ColumnConfig {
+  /** Key in the row object, e.g. "price" */
+  key: string;
+  /** Header label; defaults to key */
+  label?: string;
+  /** Semantic type; if omitted, inferred from data */
+  type?: ColumnType;
+  /** Sortable? Defaults to true */
+  sortable?: boolean;
+  /** Filter mode: "text", "range" (numeric/date), or "none". Default derived from type */
+  filter?: ColumnFilterMode;
+  /** Alignment: left/center/right. Defaults: left; right for numeric-ish types */
+  align?: "left" | "center" | "right";
+  /** Visible? Defaults to true */
+  visible?: boolean;
+}
+
 interface ColumnFilterState {
-  text?: string; // for string-like columns
-  min?: string;  // for numeric/date lower bound
-  max?: string;  // for numeric/date upper bound
+  text?: string; // for text filters
+  min?: string;  // for range filters
+  max?: string;  // for range filters
 }
 
 interface DataTableProps {
-  columns: string[];
+  columns: ColumnConfig[];
   rows: CellValue[][];
   caption?: string;
   showRowIndex?: boolean;
   sortKey?: string | null;
   sortDirection?: SortDirection;
-  onSort?: (column: string) => void;
+  onSort?: (columnKey: string) => void;
   formatCellFn?: (
     value: CellValue,
     columnKey: string,
@@ -34,7 +53,10 @@ interface DataTableProps {
   ) => React.ReactNode;
 
   columnFilters?: Record<string, ColumnFilterState>;
-  onColumnFilterChange?: (column: string, patch: Partial<ColumnFilterState>) => void;
+  onColumnFilterChange?: (
+    columnKey: string,
+    patch: Partial<ColumnFilterState>
+  ) => void;
   columnTypeByKey?: Record<string, ColumnType>;
 }
 
@@ -53,10 +75,19 @@ export function DataTable(props: DataTableProps) {
     columnTypeByKey,
   } = props;
 
+  const visibleColumns = useMemo(
+    function () {
+      return columns.filter(function (c) {
+        return c.visible !== false;
+      });
+    },
+    [columns]
+  );
+
   const hasColumnFilters = Boolean(onColumnFilterChange);
 
-  function renderSortIndicator(column: string): React.ReactNode {
-    if (!sortKey || sortKey !== column) {
+  function renderSortIndicator(columnKey: string): React.ReactNode {
+    if (!sortKey || sortKey !== columnKey) {
       return (
         <span className="ml-1 text-xs text-gray-400 dark:text-gray-500">
           ↕
@@ -77,8 +108,8 @@ export function DataTable(props: DataTableProps) {
     );
   }
 
-  function isRangeType(col: string): boolean {
-    const t = columnTypeByKey?.[col];
+  function isRangeType(col: ColumnConfig): boolean {
+    const t = col.type ?? columnTypeByKey?.[col.key];
     return (
       t === "number" ||
       t === "integer" ||
@@ -87,6 +118,38 @@ export function DataTable(props: DataTableProps) {
       t === "date" ||
       t === "datetime"
     );
+  }
+
+  function getFilterMode(col: ColumnConfig): ColumnFilterMode {
+    if (col.filter) return col.filter;
+    if (isRangeType(col)) return "range";
+    return "text";
+  }
+
+  function getAlignClass(col: ColumnConfig, isHeader: boolean): string {
+    const align =
+      col.align ??
+      ((
+        col.type ?? columnTypeByKey?.[col.key]
+      ) === "number" ||
+      col.type === "integer" ||
+      col.type === "currency" ||
+      col.type === "percent"
+        ? "right"
+        : "left");
+
+    const base =
+      "px-3 " +
+      (isHeader ? "py-2 border-b " : "py-2 border-b ") +
+      "border-gray-200 dark:border-gray-700";
+
+    if (align === "center") {
+      return base + " text-center";
+    }
+    if (align === "right") {
+      return base + " text-right";
+    }
+    return base + " text-left";
   }
 
   return (
@@ -106,26 +169,29 @@ export function DataTable(props: DataTableProps) {
                 #
               </th>
             )}
-            {columns.map(function (col) {
-              const sortable = Boolean(onSort);
+            {visibleColumns.map(function (col) {
+              const columnKey = col.key;
+              const sortable = col.sortable !== false && Boolean(onSort);
+              const headerClass =
+                getAlignClass(col, true) +
+                " font-semibold text-gray-700 dark:text-gray-200" +
+                (sortable ? " cursor-pointer select-none" : "");
+
               return (
                 <th
-                  key={col}
-                  className={
-                    "px-3 py-2 border-b border-gray-200 dark:border-gray-700 text-left font-semibold text-gray-700 dark:text-gray-200" +
-                    (sortable ? " cursor-pointer select-none" : "")
-                  }
+                  key={columnKey}
+                  className={headerClass}
                   onClick={
                     sortable
                       ? function () {
-                          if (onSort) onSort(col);
+                          if (onSort) onSort(columnKey);
                         }
                       : undefined
                   }
                 >
                   <span className="inline-flex items-center">
-                    {col}
-                    {sortable && renderSortIndicator(col)}
+                    {col.label ?? col.key}
+                    {sortable && renderSortIndicator(columnKey)}
                   </span>
                 </th>
               );
@@ -138,47 +204,71 @@ export function DataTable(props: DataTableProps) {
               {showRowIndex && (
                 <th className="px-3 py-1 border-b border-gray-200 dark:border-gray-700" />
               )}
-              {columns.map(function (col) {
-                const filter = columnFilters?.[col] || {};
-                const range = isRangeType(col);
+              {visibleColumns.map(function (col) {
+                const columnKey = col.key;
+                const filterState = columnFilters?.[columnKey] || {};
+                const mode = getFilterMode(col);
 
-                return (
-                  <th
-                    key={col}
-                    className="px-3 py-1 border-b border-gray-200 dark:border-gray-700 align-top"
-                  >
-                    {range ? (
+                if (mode === "none") {
+                  return (
+                    <th
+                      key={columnKey}
+                      className="px-3 py-1 border-b border-gray-200 dark:border-gray-700"
+                    />
+                  );
+                }
+
+                if (mode === "range") {
+                  return (
+                    <th
+                      key={columnKey}
+                      className="px-3 py-1 border-b border-gray-200 dark:border-gray-700 align-top"
+                    >
                       <div className="flex gap-1">
                         <input
                           type="text"
-                          value={filter.min ?? ""}
+                          value={filterState.min ?? ""}
                           onChange={function (e) {
-                            onColumnFilterChange?.(col, { min: e.target.value });
+                            onColumnFilterChange?.(columnKey, {
+                              min: e.target.value,
+                            });
                           }}
                           placeholder="Min"
                           className="w-1/2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-1.5 py-0.5 text-xs text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-blue-400"
                         />
                         <input
                           type="text"
-                          value={filter.max ?? ""}
+                          value={filterState.max ?? ""}
                           onChange={function (e) {
-                            onColumnFilterChange?.(col, { max: e.target.value });
+                            onColumnFilterChange?.(columnKey, {
+                              max: e.target.value,
+                            });
                           }}
                           placeholder="Max"
                           className="w-1/2 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-1.5 py-0.5 text-xs text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-blue-400"
                         />
                       </div>
-                    ) : (
-                      <input
-                        type="text"
-                        value={filter.text ?? ""}
-                        onChange={function (e) {
-                          onColumnFilterChange?.(col, { text: e.target.value });
-                        }}
-                        placeholder="Filter…"
-                        className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-1.5 py-0.5 text-xs text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-blue-400"
-                      />
-                    )}
+                    </th>
+                  );
+                }
+
+                // text mode
+                return (
+                  <th
+                    key={columnKey}
+                    className="px-3 py-1 border-b border-gray-200 dark:border-gray-700"
+                  >
+                    <input
+                      type="text"
+                      value={filterState.text ?? ""}
+                      onChange={function (e) {
+                        onColumnFilterChange?.(columnKey, {
+                          text: e.target.value,
+                        });
+                      }}
+                      placeholder="Filter…"
+                      className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-1.5 py-0.5 text-xs text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-blue-400"
+                    />
                   </th>
                 );
               })}
@@ -190,7 +280,7 @@ export function DataTable(props: DataTableProps) {
           {rows.length === 0 ? (
             <tr>
               <td
-                colSpan={columns.length + (showRowIndex ? 1 : 0)}
+                colSpan={visibleColumns.length + (showRowIndex ? 1 : 0)}
                 className="px-3 py-4 text-center text-gray-500 dark:text-gray-400"
               >
                 No data
@@ -212,16 +302,22 @@ export function DataTable(props: DataTableProps) {
                       {rowIndex + 1}
                     </td>
                   )}
-                  {columns.map(function (col, colIndex) {
-                    const value = row[colIndex];
+                  {visibleColumns.map(function (col, visibleIndex) {
+                    // rows matrix is ordered by full column list; find its total index
+                    const colIndex = columns.findIndex(function (c) {
+                      return c.key === col.key;
+                    });
+                    const value =
+                      colIndex >= 0 ? row[colIndex] : undefined;
                     const content = formatCellFn
-                      ? formatCellFn(value, col, rowIndex)
+                      ? formatCellFn(value, col.key, rowIndex)
                       : defaultFormatCell(value);
+                    const alignClass =
+                      getAlignClass(col, false) +
+                      " border-gray-100 dark:border-gray-700 whitespace-nowrap text-gray-700 dark:text-gray-200";
+
                     return (
-                      <td
-                        key={col + colIndex}
-                        className="px-3 py-2 border-b border-gray-100 dark:border-gray-700 whitespace-nowrap text-gray-700 dark:text-gray-200"
-                      >
+                      <td key={col.key + visibleIndex} className={alignClass}>
                         {content}
                       </td>
                     );
@@ -245,7 +341,7 @@ function defaultFormatCell(value: CellValue): React.ReactNode {
 }
 
 /* ------------------------------------------------------------------ */
-/* Smart wrapper: search, column filters, sort, pagination, CSV       */
+/* Smart wrapper                                                       */
 /* ------------------------------------------------------------------ */
 
 interface DataFrameTableProps {
@@ -256,7 +352,10 @@ interface DataFrameTableProps {
   defaultRowsPerPage?: number;
   initialSortKey?: string;
   initialSortDirection?: SortDirection;
+  /** Optional global column overrides; useful as default types */
   columnTypes?: Partial<Record<string, ColumnType>>;
+  /** Fully configurable columns definition (label, type, filter, etc.) */
+  columns?: ColumnConfig[];
   locale?: string;
   currency?: string;
   percentDigits?: number;
@@ -272,6 +371,7 @@ export default function DataFrameTable(props: DataFrameTableProps) {
     initialSortKey,
     initialSortDirection = "asc",
     columnTypes,
+    columns: columnsProp,
     locale = "en-US",
     currency = "USD",
     percentDigits = 2,
@@ -290,23 +390,59 @@ export default function DataFrameTable(props: DataFrameTableProps) {
     Record<string, ColumnFilterState>
   >({});
 
-  const columns = useMemo(function () {
-    if (!data || data.length === 0) return [];
-    return Object.keys(data[0]);
-  }, [data]);
+  // Base keys from data if no explicit columns provided
+  const dataKeys = useMemo(
+    function () {
+      if (!data || data.length === 0) return [];
+      return Object.keys(data[0]);
+    },
+    [data]
+  );
 
-  // Infer column types (merged with overrides)
+  // Normalize columns config: apply defaults, fill in from data if missing
+  const columns = useMemo(
+    function (): ColumnConfig[] {
+      if (columnsProp && columnsProp.length > 0) {
+        // ensure keys from config
+        return columnsProp.map(function (c) {
+          return {
+            ...c,
+            label: c.label ?? c.key,
+            visible: c.visible !== false,
+            sortable: c.sortable !== false,
+          };
+        });
+      }
+
+      // auto-generate from data keys
+      return dataKeys.map(function (key) {
+        return {
+          key,
+          label: key,
+          visible: true,
+          sortable: true,
+        } as ColumnConfig;
+      });
+    },
+    [columnsProp, dataKeys]
+  );
+
+  // Infer types, merged with config + columnTypes prop
   const columnTypeByKey = useMemo(
     function () {
       const result: Record<string, ColumnType> = {};
 
       columns.forEach(function (col) {
+        const key = col.key;
         const values = data.map(function (row) {
-          return row[col];
+          return row[key];
         });
-        const inferred = inferColumnType(col, values);
-        const override = columnTypes && columnTypes[col];
-        result[col] = override ?? inferred;
+
+        const inferred = inferColumnType(key, values);
+        const globalOverride = columnTypes && columnTypes[key];
+        const colOverride = col.type;
+
+        result[key] = colOverride ?? globalOverride ?? inferred;
       });
 
       return result;
@@ -314,7 +450,7 @@ export default function DataFrameTable(props: DataFrameTableProps) {
     [columns, data, columnTypes]
   );
 
-  // Filter: global search + per-column filters (range-aware)
+  // Filter: global + per-column (range/text)
   const filteredData = useMemo(
     function () {
       const hasGlobal = Boolean(searchQuery);
@@ -331,23 +467,32 @@ export default function DataFrameTable(props: DataFrameTableProps) {
       const globalQuery = searchQuery.toLowerCase();
 
       return data.filter(function (row) {
-        // Global search
+        // Global search: OR across all visible columns
         if (hasGlobal) {
-          const matchesGlobal = Object.values(row).some(function (value) {
-            if (value === null || value === undefined) return false;
-            return String(value).toLowerCase().includes(globalQuery);
+          const matchesGlobal = columns.some(function (col) {
+            if (col.visible === false) return false;
+            const cell = row[col.key];
+            if (cell === null || cell === undefined) return false;
+            return String(cell).toLowerCase().includes(globalQuery);
           });
+
           if (!matchesGlobal) return false;
         }
 
-        // Per-column filters
+        // Per-column filters: AND across all configured columns
         if (hasAnyColumnFilter) {
-          for (const [col, state] of Object.entries(columnFilters)) {
-            const type = columnTypeByKey[col] ?? "string";
-            const cell = row[col];
+          for (const col of columns) {
+            const state = columnFilters[col.key];
+            if (!state) continue;
 
-            // Text filter (non-range columns)
-            if (state.text && state.text.trim() !== "") {
+            const type = columnTypeByKey[col.key] ?? "string";
+            const mode: ColumnFilterMode =
+              col.filter ??
+              (isRangeTypeFromType(type) ? "range" : "text");
+
+            const cell = row[col.key];
+
+            if (mode === "text" && state.text && state.text.trim() !== "") {
               if (cell === null || cell === undefined) return false;
               const cellStr = String(cell).toLowerCase();
               if (!cellStr.includes(state.text.toLowerCase())) {
@@ -355,8 +500,7 @@ export default function DataFrameTable(props: DataFrameTableProps) {
               }
             }
 
-            // Range filters for numeric / date types
-            if (state.min || state.max) {
+            if (mode === "range" && (state.min || state.max)) {
               if (
                 type === "number" ||
                 type === "integer" ||
@@ -378,13 +522,20 @@ export default function DataFrameTable(props: DataFrameTableProps) {
         return true;
       });
     },
-    [data, searchQuery, columnFilters, columnTypeByKey]
+    [data, searchQuery, columnFilters, columns, columnTypeByKey]
   );
 
   // Sort
   const sortedData = useMemo(
     function () {
       if (!sortKey) return filteredData;
+
+      const colConfig = columns.find(function (c) {
+        return c.key === sortKey;
+      });
+      if (colConfig && colConfig.sortable === false) {
+        return filteredData;
+      }
 
       const copy = filteredData.slice();
 
@@ -414,7 +565,7 @@ export default function DataFrameTable(props: DataFrameTableProps) {
 
       return copy;
     },
-    [filteredData, sortKey, sortDirection]
+    [filteredData, sortKey, sortDirection, columns]
   );
 
   // Pagination
@@ -431,24 +582,25 @@ export default function DataFrameTable(props: DataFrameTableProps) {
     [sortedData, safePage, rowsPerPage]
   );
 
+  // Build rows matrix (in full column order)
   const rowsMatrix: CellValue[][] = useMemo(
     function () {
       if (!columns.length) return [];
       return pageData.map(function (row) {
         return columns.map(function (col) {
-          return row[col];
+          return row[col.key];
         });
       });
     },
     [columns, pageData]
   );
 
-  function handleSort(column: string) {
+  function handleSort(columnKey: string) {
     setCurrentPage(0);
-    if (sortKey === column) {
+    if (sortKey === columnKey) {
       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
     } else {
-      setSortKey(column);
+      setSortKey(columnKey);
       setSortDirection("asc");
     }
   }
@@ -469,17 +621,14 @@ export default function DataFrameTable(props: DataFrameTableProps) {
   }
 
   function handleColumnFilterChange(
-    column: string,
+    columnKey: string,
     patch: Partial<ColumnFilterState>
   ) {
     setColumnFilters(function (prev) {
-      const existing = prev[column] ?? {};
+      const existing = prev[columnKey] ?? {};
       return {
         ...prev,
-        [column]: {
-          ...existing,
-          ...patch,
-        },
+        [columnKey]: { ...existing, ...patch },
       };
     });
     setCurrentPage(0);
@@ -497,7 +646,7 @@ export default function DataFrameTable(props: DataFrameTableProps) {
     });
   }
 
-  // Type-aware formatter
+  // Typed formatter
   const typedFormatCell = useMemo(
     function () {
       return function (
@@ -526,21 +675,29 @@ export default function DataFrameTable(props: DataFrameTableProps) {
     [columnTypeByKey, locale, currency, percentDigits]
   );
 
-  // CSV export: filtered + sorted data (all pages)
+  // CSV export: filtered + sorted data, visible columns only
   function exportToCsv() {
-    if (!columns.length) return;
+    const visibleColumns = columns.filter(function (c) {
+      return c.visible !== false;
+    });
+    if (!visibleColumns.length) return;
 
     const rows = sortedData;
 
     let csv = "";
-    csv += columns.join(",") + "\n";
+    csv +=
+      visibleColumns
+        .map(function (c) {
+          return c.label ?? c.key;
+        })
+        .join(",") + "\n";
 
     rows.forEach(function (row) {
-      const cells = columns.map(function (col) {
-        const raw = row[col];
+      const cells = visibleColumns.map(function (col) {
+        const raw = row[col.key];
         if (raw === null || raw === undefined) return "";
 
-        const type = columnTypeByKey[col] ?? "string";
+        const type = columnTypeByKey[col.key] ?? "string";
         const formatted = formatValueWithType(
           raw,
           type,
@@ -672,8 +829,19 @@ export default function DataFrameTable(props: DataFrameTableProps) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Filter helpers                                                     */
+/* Filter helpers                                                      */
 /* ------------------------------------------------------------------ */
+
+function isRangeTypeFromType(type: ColumnType): boolean {
+  return (
+    type === "number" ||
+    type === "integer" ||
+    type === "currency" ||
+    type === "percent" ||
+    type === "date" ||
+    type === "datetime"
+  );
+}
 
 function passesNumericRangeFilter(
   cell: CellValue,
@@ -720,7 +888,7 @@ function passesDateRangeFilter(
 }
 
 /* ------------------------------------------------------------------ */
-/* Type helpers                                                       */
+/* Type helpers                                                        */
 /* ------------------------------------------------------------------ */
 
 function formatValueWithType(
