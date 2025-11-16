@@ -26,6 +26,11 @@ interface DataTableProps {
     columnKey: string,
     rowIndex: number
   ) => React.ReactNode;
+
+  /** Per-column filter values (for rendering filter row) */
+  columnFilters?: Record<string, string>;
+  /** Handler to update a specific column filter */
+  onColumnFilterChange?: (column: string, value: string) => void;
 }
 
 export function DataTable(props: DataTableProps) {
@@ -38,7 +43,11 @@ export function DataTable(props: DataTableProps) {
     sortDirection,
     onSort,
     formatCellFn,
+    columnFilters,
+    onColumnFilterChange,
   } = props;
+
+  const hasColumnFilters = Boolean(onColumnFilterChange);
 
   function renderSortIndicator(column: string): React.ReactNode {
     if (!sortKey || sortKey !== column) {
@@ -72,6 +81,7 @@ export function DataTable(props: DataTableProps) {
         )}
 
         <thead className="bg-gray-50 dark:bg-gray-800">
+          {/* Header row */}
           <tr>
             {showRowIndex && (
               <th className="px-3 py-2 border-b border-gray-200 dark:border-gray-700 text-right font-semibold text-gray-500 dark:text-gray-400 w-12">
@@ -103,6 +113,37 @@ export function DataTable(props: DataTableProps) {
               );
             })}
           </tr>
+
+          {/* Column filter row */}
+          {hasColumnFilters && (
+            <tr className="bg-gray-50 dark:bg-gray-800/90">
+              {showRowIndex && (
+                <th className="px-3 py-1 border-b border-gray-200 dark:border-gray-700" />
+              )}
+              {columns.map(function (col) {
+                const value =
+                  (columnFilters && columnFilters[col]) || "";
+                return (
+                  <th
+                    key={col}
+                    className="px-3 py-1 border-b border-gray-200 dark:border-gray-700"
+                  >
+                    <input
+                      type="text"
+                      value={value}
+                      onChange={function (e) {
+                        if (onColumnFilterChange) {
+                          onColumnFilterChange(col, e.target.value);
+                        }
+                      }}
+                      placeholder="Filter…"
+                      className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-1.5 py-0.5 text-xs text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-blue-400"
+                    />
+                  </th>
+                );
+              })}
+            </tr>
+          )}
         </thead>
 
         <tbody>
@@ -164,7 +205,7 @@ function defaultFormatCell(value: CellValue): React.ReactNode {
 }
 
 /* ------------------------------------------------------------------ */
-/* Smart wrapper: search, sort, pagination, type formatting, CSV      */
+/* Smart wrapper: search, per-column filters, sort, pagination, CSV   */
 /* ------------------------------------------------------------------ */
 
 interface DataFrameTableProps {
@@ -212,6 +253,10 @@ export default function DataFrameTable(props: DataFrameTableProps) {
   const [rowsPerPage, setRowsPerPage] = useState<number>(defaultRowsPerPage);
   const [currentPage, setCurrentPage] = useState<number>(0);
 
+  const [columnFilters, setColumnFilters] = useState<
+    Record<string, string>
+  >({});
+
   const columns = useMemo(function () {
     if (!data || data.length === 0) return [];
     return Object.keys(data[0]);
@@ -236,21 +281,59 @@ export default function DataFrameTable(props: DataFrameTableProps) {
     [columns, data, columnTypes]
   );
 
-  // Filter
+  // Filter: global search + per-column filters
   const filteredData = useMemo(
     function () {
-      if (!searchQuery) return data;
+      // Fast path: no filters at all
+      const hasGlobal = Boolean(searchQuery);
+      const hasColumnFilters = Object.values(columnFilters).some(
+        function (v) {
+          return v && v.trim() !== "";
+        }
+      );
 
-      const q = searchQuery.toLowerCase();
+      if (!hasGlobal && !hasColumnFilters) {
+        return data;
+      }
+
+      const globalQuery = searchQuery.toLowerCase();
 
       return data.filter(function (row) {
-        return Object.values(row).some(function (value) {
-          if (value === null || value === undefined) return false;
-          return String(value).toLowerCase().includes(q);
-        });
+        // Global search: OR across all columns
+        if (hasGlobal) {
+          const matchesGlobal = Object.values(row).some(function (value) {
+            if (value === null || value === undefined) return false;
+            return String(value).toLowerCase().includes(globalQuery);
+          });
+          if (!matchesGlobal) {
+            return false;
+          }
+        }
+
+        // Per-column filters: AND across all active column filters
+        if (hasColumnFilters) {
+          for (const [col, filterValue] of Object.entries(
+            columnFilters
+          )) {
+            const trimmed = filterValue.trim();
+            if (!trimmed) continue; // treat empty as no filter
+
+            const raw = row[col];
+            if (raw === null || raw === undefined) {
+              return false;
+            }
+
+            const cellStr = String(raw).toLowerCase();
+            if (!cellStr.includes(trimmed.toLowerCase())) {
+              return false;
+            }
+          }
+        }
+
+        return true;
       });
     },
-    [data, searchQuery]
+    [data, searchQuery, columnFilters]
   );
 
   // Sort
@@ -340,6 +423,16 @@ export default function DataFrameTable(props: DataFrameTableProps) {
     setCurrentPage(0);
   }
 
+  function handleColumnFilterChange(column: string, value: string) {
+    setColumnFilters(function (prev) {
+      return {
+        ...prev,
+        [column]: value,
+      };
+    });
+    setCurrentPage(0);
+  }
+
   function goToPreviousPage() {
     setCurrentPage(function (prev) {
       return Math.max(0, prev - 1);
@@ -388,11 +481,8 @@ export default function DataFrameTable(props: DataFrameTableProps) {
     const rows = sortedData; // already filtered & sorted
 
     let csv = "";
-
-    // Header
     csv += columns.join(",") + "\n";
 
-    // Rows
     rows.forEach(function (row) {
       const cells = columns.map(function (col) {
         const raw = row[col];
@@ -407,7 +497,6 @@ export default function DataFrameTable(props: DataFrameTableProps) {
           percentDigits
         );
 
-        // Escape for CSV
         const safe = String(formatted).replace(/"/g, '""');
         if (/[",\n]/.test(safe)) {
           return `"${safe}"`;
@@ -515,6 +604,8 @@ export default function DataFrameTable(props: DataFrameTableProps) {
         sortDirection={sortDirection}
         onSort={columns.length ? handleSort : undefined}
         formatCellFn={typedFormatCell}
+        columnFilters={columnFilters}
+        onColumnFilterChange={handleColumnFilterChange}
       />
 
       {/* Footer summary */}
@@ -540,12 +631,10 @@ function formatValueWithType(
 ): string {
   if (value === null || value === undefined) return "";
 
-  // Boolean
   if (type === "boolean" || typeof value === "boolean") {
     return value ? "True" : "False";
   }
 
-  // Dates
   if (type === "date" || type === "datetime") {
     const d = new Date(value as any);
     if (isNaN(d.getTime())) return String(value);
@@ -567,7 +656,6 @@ function formatValueWithType(
     }).format(d);
   }
 
-  // Numeric-ish
   if (
     type === "integer" ||
     type === "number" ||
@@ -595,7 +683,7 @@ function formatValueWithType(
       return new Intl.NumberFormat(locale, {
         style: "percent",
         maximumFractionDigits: percentDigits,
-      }).format(n); // assumes 0–1 range
+      }).format(n);
     }
 
     return new Intl.NumberFormat(locale, {
@@ -603,7 +691,6 @@ function formatValueWithType(
     }).format(n);
   }
 
-  // Default string
   return String(value);
 }
 
@@ -619,7 +706,6 @@ function inferColumnType(
   const sample = nonNull.slice(0, 20);
   const lowerKey = columnKey.toLowerCase();
 
-  // Booleans
   if (
     sample.every(function (v) {
       return typeof v === "boolean";
@@ -628,7 +714,6 @@ function inferColumnType(
     return "boolean";
   }
 
-  // Date-like strings
   const stringValues = sample.filter(function (v) {
     return typeof v === "string";
   }) as string[];
@@ -644,7 +729,6 @@ function inferColumnType(
     }
   }
 
-  // Numeric / currency / percent
   const numericParsable = sample.every(function (v) {
     const n = Number(v as any);
     return !Number.isNaN(n);
