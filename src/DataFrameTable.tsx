@@ -1,8 +1,17 @@
 import React, { useMemo, useState } from "react";
 
 type CellValue = string | number | boolean | null | undefined;
-
 type SortDirection = "asc" | "desc";
+
+type ColumnType =
+  | "string"
+  | "number"
+  | "integer"
+  | "currency"
+  | "percent"
+  | "date"
+  | "datetime"
+  | "boolean";
 
 interface DataTableProps {
   columns: string[];
@@ -12,6 +21,12 @@ interface DataTableProps {
   sortKey?: string | null;
   sortDirection?: SortDirection;
   onSort?: (column: string) => void;
+  /** Optional custom formatter; if omitted, default formatting is used */
+  formatCellFn?: (
+    value: CellValue,
+    columnKey: string,
+    rowIndex: number
+  ) => React.ReactNode;
 }
 
 export function DataTable(props: DataTableProps) {
@@ -23,6 +38,7 @@ export function DataTable(props: DataTableProps) {
     sortKey,
     sortDirection,
     onSort,
+    formatCellFn,
   } = props;
 
   function renderSortIndicator(column: string): React.ReactNode {
@@ -72,9 +88,13 @@ export function DataTable(props: DataTableProps) {
                     "px-3 py-2 border-b border-gray-200 dark:border-gray-700 text-left font-semibold text-gray-700 dark:text-gray-200" +
                     (sortable ? " cursor-pointer select-none" : "")
                   }
-                  onClick={sortable ? function () {
-                    if (onSort) onSort(col);
-                  } : undefined}
+                  onClick={
+                    sortable
+                      ? function () {
+                          if (onSort) onSort(col);
+                        }
+                      : undefined
+                  }
                 >
                   <span className="inline-flex items-center">
                     {col}
@@ -114,12 +134,15 @@ export function DataTable(props: DataTableProps) {
                   )}
                   {columns.map(function (col, colIndex) {
                     const value = row[colIndex];
+                    const content = formatCellFn
+                      ? formatCellFn(value, col, rowIndex)
+                      : defaultFormatCell(value);
                     return (
                       <td
                         key={col + colIndex}
                         className="px-3 py-2 border-b border-gray-100 dark:border-gray-700 whitespace-nowrap text-gray-700 dark:text-gray-200"
                       >
-                        {formatCell(value)}
+                        {content}
                       </td>
                     );
                   })}
@@ -133,7 +156,7 @@ export function DataTable(props: DataTableProps) {
   );
 }
 
-function formatCell(value: CellValue): React.ReactNode {
+function defaultFormatCell(value: CellValue): React.ReactNode {
   if (value === null || value === undefined) {
     return <span className="text-gray-400 dark:text-gray-600">—</span>;
   }
@@ -142,7 +165,7 @@ function formatCell(value: CellValue): React.ReactNode {
 }
 
 /* ------------------------------------------------------------------ */
-/* Smart wrapper: search, sort, pagination over record data           */
+/* Smart wrapper: search, sort, pagination, type-aware formatting     */
 /* ------------------------------------------------------------------ */
 
 interface DataFrameTableProps {
@@ -150,14 +173,20 @@ interface DataFrameTableProps {
   data: Record<string, CellValue>[];
   caption?: string;
   showRowIndex?: boolean;
-  /** Rows-per-page options shown in the select */
   rowsPerPageOptions?: number[];
-  /** Default rows per page */
   defaultRowsPerPage?: number;
-  /** Initial sort column key */
   initialSortKey?: string;
-  /** Initial sort direction */
   initialSortDirection?: SortDirection;
+
+  /** Optional explicit column type overrides */
+  columnTypes?: Partial<Record<string, ColumnType>>;
+
+  /** Locale for formatting numbers/dates (default "en-US") */
+  locale?: string;
+  /** Default currency code for currency columns (default "USD") */
+  currency?: string;
+  /** Max fraction digits for percent formatting (default 2) */
+  percentDigits?: number;
 }
 
 export default function DataFrameTable(props: DataFrameTableProps) {
@@ -169,6 +198,10 @@ export default function DataFrameTable(props: DataFrameTableProps) {
     defaultRowsPerPage = 10,
     initialSortKey,
     initialSortDirection = "asc",
+    columnTypes,
+    locale = "en-US",
+    currency = "USD",
+    percentDigits = 2,
   } = props;
 
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -184,6 +217,25 @@ export default function DataFrameTable(props: DataFrameTableProps) {
     if (!data || data.length === 0) return [];
     return Object.keys(data[0]);
   }, [data]);
+
+  // Infer column types (merged with overrides)
+  const columnTypeByKey = useMemo(
+    function () {
+      const result: Record<string, ColumnType> = {};
+
+      columns.forEach(function (col) {
+        const values = data.map(function (row) {
+          return row[col];
+        });
+        const inferred = inferColumnType(col, values);
+        const override = columnTypes && columnTypes[col];
+        result[col] = override ?? inferred;
+      });
+
+      return result;
+    },
+    [columns, data, columnTypes]
+  );
 
   // Filter
   const filteredData = useMemo(
@@ -213,14 +265,12 @@ export default function DataFrameTable(props: DataFrameTableProps) {
         const va = a[sortKey];
         const vb = b[sortKey];
 
-        // Handle nullish first
         const aNull = va === null || va === undefined;
         const bNull = vb === null || vb === undefined;
         if (aNull && bNull) return 0;
         if (aNull) return 1;
         if (bNull) return -1;
 
-        // Try numeric compare if both look like numbers
         const na = Number(va);
         const nb = Number(vb);
         const bothNumeric = !Number.isNaN(na) && !Number.isNaN(nb);
@@ -303,6 +353,98 @@ export default function DataFrameTable(props: DataFrameTableProps) {
     });
   }
 
+  // Typed formatter wired into DataTable
+  const typedFormatCell = useMemo(
+    function () {
+      const numberFormatter = new Intl.NumberFormat(locale, {
+        maximumFractionDigits: 2,
+      });
+      const integerFormatter = new Intl.NumberFormat(locale, {
+        maximumFractionDigits: 0,
+      });
+      const currencyFormatter = new Intl.NumberFormat(locale, {
+        style: "currency",
+        currency,
+        maximumFractionDigits: 2,
+      });
+      const percentFormatter = new Intl.NumberFormat(locale, {
+        style: "percent",
+        maximumFractionDigits: percentDigits,
+      });
+      const dateFormatter = new Intl.DateTimeFormat(locale, {
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+      });
+      const dateTimeFormatter = new Intl.DateTimeFormat(locale, {
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      return function (
+        value: CellValue,
+        columnKey: string,
+        _rowIndex: number
+      ): React.ReactNode {
+        if (value === null || value === undefined) {
+          return (
+            <span className="text-gray-400 dark:text-gray-600">—</span>
+          );
+        }
+
+        const type = columnTypeByKey[columnKey] ?? "string";
+
+        // Booleans first (nice labels)
+        if (type === "boolean" || typeof value === "boolean") {
+          return value ? "True" : "False";
+        }
+
+        // Dates
+        if (type === "date" || type === "datetime") {
+          const d = new Date(value as any);
+          if (isNaN(d.getTime())) {
+            return String(value);
+          }
+          return type === "date"
+            ? dateFormatter.format(d)
+            : dateTimeFormatter.format(d);
+        }
+
+        // Numerics
+        if (
+          type === "integer" ||
+          type === "number" ||
+          type === "currency" ||
+          type === "percent"
+        ) {
+          const n = Number(value);
+          if (Number.isNaN(n)) {
+            return String(value);
+          }
+
+          if (type === "integer") {
+            return integerFormatter.format(n);
+          }
+          if (type === "currency") {
+            return currencyFormatter.format(n);
+          }
+          if (type === "percent") {
+            // Assume fractions (0–1) and format as 0–100%
+            return percentFormatter.format(n);
+          }
+          return numberFormatter.format(n);
+        }
+
+        // Default string
+        return String(value);
+      };
+    },
+    [columnTypeByKey, locale, currency, percentDigits]
+  );
+
   return (
     <div className="space-y-3">
       {/* Controls */}
@@ -375,21 +517,96 @@ export default function DataFrameTable(props: DataFrameTableProps) {
         sortKey={sortKey}
         sortDirection={sortDirection}
         onSort={columns.length ? handleSort : undefined}
+        formatCellFn={typedFormatCell}
       />
 
       {/* Footer summary */}
       <div className="text-xs text-gray-500 dark:text-gray-400">
         Showing{" "}
-        {totalRows === 0
-          ? 0
-          : safePage * rowsPerPage + 1}{" "}
-        –{" "}
-        {Math.min(
-          (safePage + 1) * rowsPerPage,
-          totalRows
-        )}{" "}
-        of {totalRows} rows
+        {totalRows === 0 ? 0 : safePage * rowsPerPage + 1} –{" "}
+        {Math.min((safePage + 1) * rowsPerPage, totalRows)} of {totalRows} rows
       </div>
     </div>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* Type inference helpers                                             */
+/* ------------------------------------------------------------------ */
+
+function inferColumnType(
+  columnKey: string,
+  values: CellValue[]
+): ColumnType {
+  const nonNull = values.filter(function (v) {
+    return v !== null && v !== undefined;
+  });
+  if (nonNull.length === 0) return "string";
+
+  const sample = nonNull.slice(0, 20);
+
+  // Booleans
+  if (sample.every(function (v) {
+    return typeof v === "boolean";
+  })) {
+    return "boolean";
+  }
+
+  const lowerKey = columnKey.toLowerCase();
+
+  // Date-like strings
+  const stringValues = sample.filter(function (v) {
+    return typeof v === "string";
+  }) as string[];
+  if (stringValues.length > 0) {
+    const dateLike = stringValues.filter(function (s) {
+      return !Number.isNaN(Date.parse(s));
+    });
+    if (dateLike.length === stringValues.length) {
+      const hasTime = stringValues.some(function (s) {
+        return s.includes("T") || s.includes(":");
+      });
+      return hasTime ? "datetime" : "date";
+    }
+  }
+
+  // Numeric / currency / percent
+  const numericParsable = sample.every(function (v) {
+    const n = Number(v as any);
+    return !Number.isNaN(n);
+  });
+
+  if (numericParsable) {
+    const nums = sample.map(function (v) {
+      return Number(v as any);
+    });
+
+    const allInts = nums.every(function (n) {
+      return Number.isInteger(n);
+    });
+
+    const inZeroOne = nums.every(function (n) {
+      return n >= 0 && n <= 1;
+    });
+
+    const keyLooksPercent =
+      lowerKey.includes("percent") ||
+      lowerKey.includes("pct") ||
+      lowerKey.includes("rate") ||
+      lowerKey.includes("ratio");
+
+    const keyLooksCurrency =
+      lowerKey.includes("price") ||
+      lowerKey.includes("amount") ||
+      lowerKey.includes("cost") ||
+      lowerKey.includes("revenue") ||
+      lowerKey.includes("rev");
+
+    if (keyLooksPercent || inZeroOne) return "percent";
+    if (keyLooksCurrency) return "currency";
+    if (allInts) return "integer";
+    return "number";
+  }
+
+  return "string";
 }

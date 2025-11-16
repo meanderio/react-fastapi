@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import{ useState, useEffect } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import './App.css'
@@ -17,23 +17,110 @@ function App() {
 
 
   const fetchPurchase = async () => {
-    const response = await api.get('/api/purchases/2');
+    const response = await api.get('/api/purchases/1');
     console.log(response.data);
     setPurchase(response.data);
   };
 
   const data = [
-    { date: "2025-11-15", store: "A", category: "Food", price: 12.5 },
-    { date: "2025-11-15", store: "B", category: "Clothing", price: 44.99 },
-    { date: "2025-11-16", store: "A", category: "Electronics", price: null },
-    { date: "2025-11-15", store: "A", category: "Food", price: 12.5 },
-    { date: "2025-11-15", store: "B", category: "Clothing", price: 44.99 },
-    { date: "2025-11-16", store: "A", category: "Electronics", price: null },
-    { date: "2025-11-15", store: "A", category: "Food", price: 12.5 },
-    { date: "2025-11-15", store: "B", category: "Clothing", price: 44.99 },
-    { date: "2025-11-16", store: "A", category: "Electronics", price: null },
-  ];
 
+    {
+      date: "2025-11-15",
+      store: "A",
+      category: "Food",
+      price: 12.5,
+      conversion_rate: 0.0834,
+      in_stock: true,
+    },
+    {
+      date: "2025-11-16",
+      store: "B",
+      category: "Clothing",
+      price: 44.99,
+      conversion_rate: 0.125,
+      in_stock: false,
+    }, 
+    {
+      date: "2025-11-15",
+      store: "C",
+      category: "Tech",
+      price: 52.42,
+      conversion_rate: 0.14,
+      in_stock: true,
+    },
+    {
+      date: "2025-11-15",
+      store: "D",
+      category: "Tech",
+      price: 120.25,
+      conversion_rate: 0.125,
+      in_stock: false,
+    },
+    {
+      date: "2025-11-17",
+      store: "C",
+      category: "Food",
+      price: 22.42,
+      conversion_rate: 0.14,
+      in_stock: true,
+    },
+    {
+      date: "2025-11-16",
+      store: "B",
+      category: "Food",
+      price: 12.25,
+      conversion_rate: 0.125,
+      in_stock: true,
+    },
+    {
+      date: "2025-11-15",
+      store: "A",
+      category: "Food",
+      price: 12.5,
+      conversion_rate: 0.0834,
+      in_stock: true,
+    },
+    {
+      date: "2025-11-16",
+      store: "B",
+      category: "Clothing",
+      price: 44.99,
+      conversion_rate: 0.125,
+      in_stock: false,
+    }, 
+    {
+      date: "2025-11-15",
+      store: "C",
+      category: "Tech",
+      price: 52.42,
+      conversion_rate: 0.14,
+      in_stock: true,
+    },
+    {
+      date: "2025-11-15",
+      store: "D",
+      category: "Tech",
+      price: 120.25,
+      conversion_rate: 0.125,
+      in_stock: false,
+    },
+    {
+      date: "2025-11-17",
+      store: "C",
+      category: "Food",
+      price: 22.42,
+      conversion_rate: 0.14,
+      in_stock: true,
+    },
+    {
+      date: "2025-11-16",
+      store: "B",
+      category: "Food",
+      price: 12.25,
+      conversion_rate: 0.125,
+      in_stock: true,
+    },
+  ];
   return (
     <>
       <div className="flex justify-center">
@@ -45,19 +132,25 @@ function App() {
         </a>
       </div>
       <div className="p-4">
-      <h1 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">
-        DataFrame View
-      </h1>
-      <DataFrameTable
-        data={data}
-        caption="Sales Data"
-        showRowIndex={true}
-        rowsPerPageOptions={[5, 10, 25]}
-        defaultRowsPerPage={5}
-      />
-    </div>
+        <h1 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">
+          DataFrame View
+        </h1>
+        <DataFrameTable
+          data={data}
+          caption="Sales Data"
+          showRowIndex
+          locale="en-US"
+          currency="USD"
+          percentDigits={1}
+          columnTypes={{
+            // Example: force a specific type if you don't like inference
+            price: "currency",
+            conversion_rate: "percent",
+          }}
+        />
+      </div>
       <div className="card">
-        <button className="bg-indigo-500 hover:bg-indigo-700 hover:ring-2 hover:ring-red-500 rounded-lg text-white py-2 px-2 ease-in-out hover:shadow-xl hover:shadow-red-500" onClick={() => fetchPurchase()}> Get Purchase
+        <button className="bg-indigo-500 hover:bg-indigo-700 rounded-lg text-white py-2 px-2" onClick={() => fetchPurchase()}> Get Purchase
         </button>
         <div className="py-2">
           { purchase 
