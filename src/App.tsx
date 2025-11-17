@@ -3,8 +3,8 @@ import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import './App.css'
 import api from './api'
-import type { ColumnConfig } from './components/dataframe/types'
-import DataFrameTable from './components/dataframe/DataFrameTable'
+import type { ColumnConfig } from '@components/dataframe/types'
+import DataFrameTable from '@components/dataframe/DataFrameTable'
 
 interface Purchase {
   location: string;
