@@ -7,6 +7,7 @@ import type { ColumnConfig } from '@components/dataframe/types'
 import DataFrameTable from '@components/dataframe/DataFrameTable'
 import PurchaseForm from '@components/PurchaseForm'
 
+
 interface Purchase {
   location: string;
   amount: number;
