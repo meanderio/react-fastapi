@@ -13,26 +13,10 @@ interface Purchase {
   purchaser_id: number;
 }
 
-interface Transaction {
-  location: string;
-  amount: number;
-  user_id: number;
-}
-
 function App() {
   // const [count, setCount] = useState(0)
   const [purchase, setPurchase] = useState<Purchase>()
-  const [transaction, setTransaction] = useState<Transaction>()
   
-  const sendTransaction = async () => {
-      const payload: Transaction = {
-        location: "costco",
-        amount: 520.11,
-        user_id: 1
-      };
-      const response = await api.post('/api/purchases/', payload);
-      console.log(response);
-    }
   const fetchPurchase = async () => {
     const response = await api.get('/api/purchases/1');
     console.log(response.data);
