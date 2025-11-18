@@ -5,6 +5,7 @@ import './App.css'
 import api from './api'
 import type { ColumnConfig } from '@components/dataframe/types'
 import DataFrameTable from '@components/dataframe/DataFrameTable'
+import PurchaseForm from '@components/PurchaseForm'
 
 interface Purchase {
   location: string;
@@ -12,11 +13,26 @@ interface Purchase {
   purchaser_id: number;
 }
 
+interface Transaction {
+  location: string;
+  amount: number;
+  user_id: number;
+}
+
 function App() {
   // const [count, setCount] = useState(0)
   const [purchase, setPurchase] = useState<Purchase>()
-
-
+  const [transaction, setTransaction] = useState<Transaction>()
+  
+  const sendTransaction = async () => {
+      const payload: Transaction = {
+        location: "costco",
+        amount: 520.11,
+        user_id: 1
+      };
+      const response = await api.post('/api/purchases/', payload);
+      console.log(response);
+    }
   const fetchPurchase = async () => {
     const response = await api.get('/api/purchases/1');
     console.log(response.data);
@@ -170,6 +186,16 @@ function App() {
         <a href="https://react.dev" target="_blank">
           <img src={reactLogo} className="logo react" alt="React logo" />
         </a>
+      </div>
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold">Purchases</h1>
+
+        <PurchaseForm
+          onSuccess={(purchase) => {
+            console.log("Created purchase:", purchase);
+            // e.g. refresh a table, invalidate SWR, etc.
+          }}
+        />
       </div>
       <div className="p-4">
         <h1 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">
